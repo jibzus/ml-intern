@@ -12,12 +12,44 @@ a cpu-basic sandbox is auto-created (no approval needed).
 from __future__ import annotations
 
 import asyncio
+import shlex
 from typing import Any
 
 from huggingface_hub import HfApi, SpaceHardware
 
 from agent.core.session import Event
 from agent.tools.sandbox_client import Sandbox
+
+
+def _looks_like_path(script: str) -> bool:
+    """Return True if the script string looks like a file path (not inline code)."""
+    return (
+        isinstance(script, str)
+        and script.strip() == script
+        and not any(c in script for c in "\r\n\0")
+        and (script.startswith("/") or script.startswith("./") or script.startswith("../"))
+    )
+
+
+async def resolve_sandbox_script(sandbox: Any, script: str) -> tuple[str | None, str | None]:
+    """Read a file from the sandbox if *script* looks like a path.
+
+    Returns:
+        (content, error) — content is the file text on success,
+        error is a message on failure.  Both None means *script*
+        is not a path (caller should use it as-is).
+    """
+    if not sandbox or not _looks_like_path(script):
+        return None, None
+    try:
+        result = await asyncio.to_thread(
+            sandbox.bash, f"cat {shlex.quote(script)}"
+        )
+        if result.success and result.output:
+            return result.output, None
+        return None, f"Failed to read {script} from sandbox: {result.error}"
+    except Exception as e:
+        return None, f"Failed to read {script} from sandbox: {e}"
 
 # ── Tool name mapping (short agent names → Sandbox client names) ──────
 

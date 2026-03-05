@@ -491,6 +491,16 @@ class Handlers:
                             tool_args = json.loads(tc.function.arguments)
                         except (json.JSONDecodeError, TypeError):
                             tool_args = {}
+
+                        # Resolve sandbox file paths for hf_jobs scripts so the
+                        # frontend can display & edit the actual file content.
+                        if tool_name == "hf_jobs" and isinstance(tool_args.get("script"), str):
+                            from agent.tools.sandbox_tool import resolve_sandbox_script
+                            sandbox = getattr(session, "sandbox", None)
+                            content, _ = await resolve_sandbox_script(sandbox, tool_args["script"])
+                            if content:
+                                tool_args = {**tool_args, "script": content}
+
                         tools_data.append(
                             {
                                 "tool": tool_name,

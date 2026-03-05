@@ -546,7 +546,7 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {toolDisplayMap[tool.toolCallId] || tool.toolName}
+                  {toolDisplayMap[tool.toolCallId] || String((tool.input as Record<string, unknown>)?.description || '') || tool.toolName}
                 </Typography>
 
                 {/* Status chip (non hf_jobs, or hf_jobs without final status) */}
