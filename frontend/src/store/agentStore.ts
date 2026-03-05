@@ -41,7 +41,7 @@ export interface LLMHealthError {
 export type ActivityStatus =
   | { type: 'idle' }
   | { type: 'thinking' }
-  | { type: 'tool'; toolName: string }
+  | { type: 'tool'; toolName: string; description?: string }
   | { type: 'waiting-approval' }
   | { type: 'streaming' };
 

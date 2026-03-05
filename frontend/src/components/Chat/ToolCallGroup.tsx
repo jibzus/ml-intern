@@ -496,7 +496,9 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
           const displayState = isPending && localDecision
             ? (localDecision.approved ? 'input-available' : 'output-denied')
             : state;
-          const label = statusLabel(displayState as ToolPartState);
+          const baseLabel = statusLabel(displayState as ToolPartState);
+          const toolDescription = (tool.input as Record<string, unknown>)?.description as string | undefined;
+          const label = baseLabel ? (toolDescription || baseLabel) : null;
 
           // Parse job metadata from hf_jobs output and store
           const jobUrlFromStore = tool.toolName === 'hf_jobs' ? getJobUrl(tool.toolCallId) : undefined;
@@ -546,7 +548,7 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {toolDisplayMap[tool.toolCallId] || String((tool.input as Record<string, unknown>)?.description || '') || tool.toolName}
+                  {toolDisplayMap[tool.toolCallId] || tool.toolName}
                 </Typography>
 
                 {/* Status chip (non hf_jobs, or hf_jobs without final status) */}

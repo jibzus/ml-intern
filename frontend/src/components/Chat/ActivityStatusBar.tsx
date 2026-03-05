@@ -21,7 +21,7 @@ function statusLabel(status: ActivityStatus): string {
   switch (status.type) {
     case 'thinking': return 'Thinking';
     case 'streaming': return 'Writing';
-    case 'tool': return TOOL_LABELS[status.toolName] || `Running ${status.toolName}`;
+    case 'tool': return status.description || TOOL_LABELS[status.toolName] || `Running ${status.toolName}`;
     case 'waiting-approval': return 'Waiting for approval';
     default: return '';
   }

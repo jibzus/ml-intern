@@ -195,8 +195,8 @@ export function useAgentChat({ sessionId, isActive, onReady, onError, onSessionD
       onStreaming: () => {
         if (isActiveRef.current) setActivityStatus({ type: 'streaming' });
       },
-      onToolRunning: (toolName: string) => {
-        if (isActiveRef.current) setActivityStatus({ type: 'tool', toolName });
+      onToolRunning: (toolName: string, description?: string) => {
+        if (isActiveRef.current) setActivityStatus({ type: 'tool', toolName, description });
       },
     }),
     // sessionId is the only real dependency — Zustand setters are stable

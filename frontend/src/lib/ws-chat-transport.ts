@@ -35,7 +35,7 @@ export interface SideChannelCallbacks {
   /** Called when assistant text starts streaming */
   onStreaming: () => void;
   /** Called when a tool starts running (non-plan) */
-  onToolRunning: (toolName: string) => void;
+  onToolRunning: (toolName: string, description?: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +499,7 @@ export class WebSocketChatTransport implements ChatTransport<UIMessage> {
         this.enqueue({ type: 'tool-input-start', toolCallId, toolName, dynamic: true });
         this.enqueue({ type: 'tool-input-available', toolCallId, toolName, input: args, dynamic: true });
 
-        this.sideChannel.onToolRunning(toolName);
+        this.sideChannel.onToolRunning(toolName, (args as Record<string, unknown>)?.description as string | undefined);
         this.sideChannel.onToolCallPanel(toolName, args as Record<string, unknown>);
         break;
       }
