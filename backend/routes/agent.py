@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Any
 
-from dependencies import get_current_user, get_ws_user
+from dependencies import AUTH_ENABLED, check_org_membership, get_current_user, get_ws_user
 from fastapi import (
     APIRouter,
     Depends,
@@ -34,6 +34,9 @@ from websocket import manager as ws_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["agent"])
+
+REQUIRED_ORG = "ml-agent-explorers"
+ORG_JOIN_URL = "https://huggingface.co/organizations/ml-agent-explorers/share/GzPMJUivoFPlfkvFtIqEouZKSytatKQSZT"
 
 AVAILABLE_MODELS = [
     {
@@ -213,6 +216,14 @@ async def create_session(
         hf_token = auth_header[7:]
     if not hf_token:
         hf_token = request.cookies.get("hf_access_token")
+
+    # Gate access behind org membership
+    if AUTH_ENABLED and hf_token:
+        if not await check_org_membership(hf_token, REQUIRED_ORG):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "org_required", "join_url": ORG_JOIN_URL},
+            )
 
     try:
         session_id = await session_manager.create_session(

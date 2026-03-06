@@ -7,6 +7,7 @@ import {
   Alert,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import { useSessionStore } from '@/store/sessionStore';
 import { useAgentStore } from '@/store/agentStore';
 import { apiFetch } from '@/utils/api';
@@ -15,34 +16,34 @@ import { isInIframe, triggerLogin } from '@/hooks/useAuth';
 /** HF brand orange */
 const HF_ORANGE = '#FF9D00';
 
+interface OrgGate {
+  joinUrl: string;
+}
+
 export default function WelcomeScreen() {
   const { createSession } = useSessionStore();
   const { setPlan, clearPanel, user } = useAgentStore();
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orgGate, setOrgGate] = useState<OrgGate | null>(null);
 
   const inIframe = isInIframe();
   const isAuthenticated = user?.authenticated;
   const isDevUser = user?.username === 'dev';
 
-  const handleStart = useCallback(async () => {
-    if (isCreating) return;
-
-    // Not authenticated and not dev → need to login
-    if (!isAuthenticated && !isDevUser) {
-      // In iframe: can't redirect (cookies blocked) — user needs to open in new tab
-      // This shouldn't happen because we show a different button in iframe
-      // But just in case:
-      if (inIframe) return;
-      triggerLogin();
-      return;
-    }
-
+  const tryCreateSession = useCallback(async () => {
     setIsCreating(true);
     setError(null);
 
     try {
       const response = await apiFetch('/api/session', { method: 'POST' });
+      if (response.status === 403) {
+        const data = await response.json();
+        if (data.detail?.error === 'org_required') {
+          setOrgGate({ joinUrl: data.detail.join_url });
+          return;
+        }
+      }
       if (response.status === 503) {
         const data = await response.json();
         setError(data.detail || 'Server is at capacity. Please try again later.');
@@ -57,6 +58,7 @@ export default function WelcomeScreen() {
         return;
       }
       const data = await response.json();
+      setOrgGate(null);
       createSession(data.session_id);
       setPlan([]);
       clearPanel();
@@ -65,7 +67,19 @@ export default function WelcomeScreen() {
     } finally {
       setIsCreating(false);
     }
-  }, [isCreating, createSession, setPlan, clearPanel, isAuthenticated, isDevUser, inIframe]);
+  }, [createSession, setPlan, clearPanel]);
+
+  const handleStart = useCallback(async () => {
+    if (isCreating) return;
+
+    if (!isAuthenticated && !isDevUser) {
+      if (inIframe) return;
+      triggerLogin();
+      return;
+    }
+
+    await tryCreateSession();
+  }, [isCreating, isAuthenticated, isDevUser, inIframe, tryCreateSession]);
 
   // Build the direct Space URL for the "open in new tab" link
   const spaceHost = typeof window !== 'undefined'
@@ -129,8 +143,67 @@ export default function WelcomeScreen() {
         and explores <strong>datasets</strong> — all through natural conversation.
       </Typography>
 
-      {/* Action button — depends on context */}
-      {inIframe && !isAuthenticated && !isDevUser ? (
+      {/* Action area — depends on context */}
+      {orgGate ? (
+        // Authenticated but not in org → join step
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, maxWidth: 480, px: 2 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'var(--muted-text)',
+              textAlign: 'center',
+              lineHeight: 1.7,
+              fontSize: '0.88rem',
+              '& strong': { color: 'var(--text)', fontWeight: 600 },
+            }}
+          >
+            Under the hood, this agent uses GPUs, inference APIs, and other paid Hub goodies — but we made them all free for you.
+            Just join <strong>ML Agent Explorers</strong> and you're in!
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            component="a"
+            href={orgGate.joinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            startIcon={<GroupAddIcon />}
+            sx={{
+              px: 5,
+              py: 1.5,
+              fontSize: '1rem',
+              fontWeight: 700,
+              textTransform: 'none',
+              borderRadius: '12px',
+              bgcolor: HF_ORANGE,
+              color: '#000',
+              boxShadow: '0 4px 24px rgba(255, 157, 0, 0.3)',
+              textDecoration: 'none',
+              '&:hover': {
+                bgcolor: '#FFB340',
+                boxShadow: '0 6px 32px rgba(255, 157, 0, 0.45)',
+              },
+            }}
+          >
+            Join ML Agent Explorers
+          </Button>
+          <Button
+            variant="text"
+            size="small"
+            onClick={tryCreateSession}
+            disabled={isCreating}
+            startIcon={isCreating ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{
+              color: 'var(--muted-text)',
+              textTransform: 'none',
+              fontSize: '0.85rem',
+              '&:hover': { color: 'var(--text)' },
+            }}
+          >
+            {isCreating ? 'Checking...' : "I've joined — let's go"}
+          </Button>
+        </Box>
+      ) : inIframe && !isAuthenticated && !isDevUser ? (
         // In iframe + not logged in → link to open Space directly
         <Button
           variant="contained"
