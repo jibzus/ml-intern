@@ -18,24 +18,10 @@ interface SessionSidebarProps {
   onClose?: () => void;
 }
 
-/** Small coloured dot for connection status */
-const StatusDot = ({ connected }: { connected: boolean }) => (
-  <Box
-    sx={{
-      width: 6,
-      height: 6,
-      borderRadius: '50%',
-      bgcolor: connected ? 'var(--accent-green)' : 'var(--accent-red)',
-      boxShadow: connected ? '0 0 4px rgba(76,175,80,0.4)' : 'none',
-      flexShrink: 0,
-    }}
-  />
-);
-
 export default function SessionSidebar({ onClose }: SessionSidebarProps) {
   const { sessions, activeSessionId, createSession, deleteSession, switchSession } =
     useSessionStore();
-  const { isConnected, setPlan, clearPanel } =
+  const { setPlan, clearPanel } =
     useAgentStore();
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [capacityError, setCapacityError] = useState<string | null>(null);
