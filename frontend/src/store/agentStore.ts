@@ -27,6 +27,7 @@ export interface PanelData {
   title: string;
   script?: PanelSection;
   output?: PanelSection;
+  input?: PanelSection;
   parameters?: Record<string, unknown>;
 }
 

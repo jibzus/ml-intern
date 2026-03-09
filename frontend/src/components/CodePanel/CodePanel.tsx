@@ -137,6 +137,7 @@ export default function CodePanel() {
   const [editedContent, setEditedContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showInput, setShowInput] = useState(false);
 
   const isDark = themeMode === 'dark';
   const syntaxTheme = isDark ? vscDarkPlus : vs;
@@ -148,6 +149,11 @@ export default function CodePanel() {
 
   const isEditableScript = panelView === 'script' && panelEditable;
   const hasUnsavedChanges = isEditing && editedContent !== originalContent;
+
+  // Reset input toggle when panel data changes
+  useEffect(() => {
+    setShowInput(false);
+  }, [panelData]);
 
   // Sync edited content when panel data changes
   useEffect(() => {
@@ -205,13 +211,15 @@ export default function CodePanel() {
     }
   }, [isEditing, editedContent, activeSection?.content]);
 
+  const visibleSection = (showInput && panelData?.input) ? panelData.input : activeSection;
+
   const displayContent = useMemo(() => {
-    if (!activeSection?.content) return '';
-    if (!activeSection.language || activeSection.language === 'text') {
-      return processLogs(activeSection.content);
+    if (!visibleSection?.content) return '';
+    if (!visibleSection.language || visibleSection.language === 'text') {
+      return processLogs(visibleSection.content);
     }
-    return activeSection.content;
-  }, [activeSection?.content, activeSection?.language]);
+    return visibleSection.content;
+  }, [visibleSection?.content, visibleSection?.language]);
 
   useEffect(() => {
     if (scrollRef.current && panelView === 'output') {
@@ -240,7 +248,7 @@ export default function CodePanel() {
 
   // ── Content renderer ───────────────────────────────────────────
   const renderContent = () => {
-    if (!activeSection?.content) {
+    if (!visibleSection?.content) {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>
           <Typography variant="caption">NO CONTENT TO DISPLAY</Typography>
@@ -248,7 +256,7 @@ export default function CodePanel() {
       );
     }
 
-    if (isEditing && isEditableScript) {
+    if (!showInput && isEditing && isEditableScript) {
       return (
         <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
           <SyntaxHighlighter
@@ -295,7 +303,7 @@ export default function CodePanel() {
       );
     }
 
-    const lang = activeSection.language;
+    const lang = visibleSection.language;
     if (lang === 'python') return renderSyntaxBlock('python');
     if (lang === 'json') return renderSyntaxBlock('json');
 
@@ -480,6 +488,34 @@ export default function CodePanel() {
                 overflow: 'auto',
               }}
             >
+              {/* Input / Output toggle */}
+              {panelData?.input && panelView === 'output' && (
+                <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5 }}>
+                  {['output', 'input'].map((tab) => (
+                    <Typography
+                      key={tab}
+                      onClick={() => setShowInput(tab === 'input')}
+                      variant="caption"
+                      sx={{
+                        fontSize: '0.65rem',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 0.5,
+                        color: (tab === 'input') === showInput ? 'var(--text)' : 'var(--muted-text)',
+                        bgcolor: (tab === 'input') === showInput ? 'var(--hover-bg)' : 'transparent',
+                        transition: 'all 0.12s ease',
+                        '&:hover': { color: 'var(--text)' },
+                      }}
+                    >
+                      {tab}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
               {renderContent()}
             </Box>
           </Box>

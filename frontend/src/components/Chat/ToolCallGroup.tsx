@@ -387,17 +387,22 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
         return;
       }
 
+      const inputSection = args ? { content: JSON.stringify(args, null, 2), language: 'json' } : undefined;
+
       if ((tool.state === 'output-available' || tool.state === 'output-error') && tool.output) {
         let language = 'text';
         const content = String(tool.output);
         if (content.trim().startsWith('{') || content.trim().startsWith('[')) language = 'json';
         else if (content.includes('```')) language = 'markdown';
 
-        setPanel({ title: displayName, output: { content, language } }, 'output');
+        setPanel({ title: displayName, output: { content, language }, input: inputSection }, 'output');
+        setRightPanelOpen(true);
+      } else if (tool.state === 'output-error') {
+        const content = `Tool \`${tool.toolName}\` returned an error with no output message.`;
+        setPanel({ title: displayName, output: { content, language: 'markdown' }, input: inputSection }, 'output');
         setRightPanelOpen(true);
       } else if (args) {
-        const content = JSON.stringify(args, null, 2);
-        setPanel({ title: displayName, output: { content, language: 'json' } }, 'output');
+        setPanel({ title: displayName, output: { content: JSON.stringify(args, null, 2), language: 'json' }, input: inputSection }, 'output');
         setRightPanelOpen(true);
       }
     },
