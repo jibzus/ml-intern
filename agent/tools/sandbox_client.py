@@ -443,34 +443,59 @@ class Sandbox:
     ) -> ToolResult:
         # Strip leading slash for correct httpx base_url resolution
         endpoint = endpoint.lstrip("/")
-        try:
-            resp = self._client.post(
-                endpoint,
-                json=payload,
-                timeout=timeout or self.timeout,
-            )
-            data = resp.json()
-            if resp.status_code == 200:
-                return ToolResult(
-                    success=data.get("success", True),
-                    output=data.get("output", ""),
-                    error=data.get("error", ""),
+        effective_timeout = timeout or self.timeout
+        last_error = ""
+
+        # Retry up to 3 times for transient failures (sandbox waking from
+        # sleep returns empty / non-JSON responses while it starts up).
+        for attempt in range(3):
+            try:
+                resp = self._client.post(
+                    endpoint,
+                    json=payload,
+                    timeout=effective_timeout,
                 )
-            return ToolResult(
-                success=False,
-                error=data.get("error", f"HTTP {resp.status_code}"),
-            )
-        except httpx.TimeoutException:
-            return ToolResult(
-                success=False, error=f"Timeout after {timeout or self.timeout}s"
-            )
-        except httpx.ConnectError:
-            return ToolResult(
-                success=False,
-                error=f"Cannot connect to sandbox. Is {self.space_id} running? Status: {self.status}",
-            )
-        except Exception as e:
-            return ToolResult(success=False, error=str(e))
+                try:
+                    data = resp.json()
+                except (ValueError, UnicodeDecodeError):
+                    # Non-JSON response — sandbox is likely still starting up.
+                    body_preview = resp.text[:200] if resp.text else "(empty)"
+                    last_error = (
+                        f"Sandbox returned non-JSON response (HTTP {resp.status_code}): "
+                        f"{body_preview}"
+                    )
+                    if attempt < 2:
+                        time.sleep(3 * (attempt + 1))
+                        continue
+                    return ToolResult(success=False, error=last_error)
+
+                if resp.status_code == 200:
+                    return ToolResult(
+                        success=data.get("success", True),
+                        output=data.get("output", ""),
+                        error=data.get("error", ""),
+                    )
+                return ToolResult(
+                    success=False,
+                    error=data.get("error", f"HTTP {resp.status_code}"),
+                )
+            except httpx.TimeoutException:
+                return ToolResult(
+                    success=False, error=f"Timeout after {effective_timeout}s"
+                )
+            except httpx.ConnectError:
+                last_error = (
+                    f"Cannot connect to sandbox. Is {self.space_id} running? "
+                    f"Status: {self.status}"
+                )
+                if attempt < 2:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                return ToolResult(success=False, error=last_error)
+            except Exception as e:
+                return ToolResult(success=False, error=str(e))
+
+        return ToolResult(success=False, error=last_error or "Unknown error")
 
     # ── Tools ─────────────────────────────────────────────────────
 
