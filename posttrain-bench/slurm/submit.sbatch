@@ -95,7 +95,7 @@ srun \
         cd /agent_repo
         uv venv --python 3.12 /tmp/agent_venv
         source /tmp/agent_venv/bin/activate
-        uv pip install -e ".[agent]" --quiet
+        uv sync --extra agent --no-dev
 
         # Run agent in the task directory
         cd /home/ben/task

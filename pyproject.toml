@@ -49,3 +49,6 @@ dev = [
 all = [
     "hf-agent[agent,eval,dev]",
 ]
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
