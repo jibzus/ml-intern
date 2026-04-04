@@ -89,7 +89,7 @@ class ContextManager:
         )
         self.max_context = max_context - 10000
         self.compact_size = int(max_context * compact_size)
-        self.context_length = max_context
+        self.context_length = 0  # Updated after each LLM call with actual usage
         self.untouched_messages = untouched_messages
         self.items: list[Message] = [Message(role="system", content=self.system_prompt)]
 

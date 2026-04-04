@@ -204,6 +204,11 @@ async def _compact_and_notify(session: Session) -> None:
         model_name=session.config.model_name,
     )
     old_length = session.context_manager.context_length
+    max_ctx = session.context_manager.max_context
+    logger.debug(
+        "Compaction check: context_length=%d, max_context=%d, needs_compact=%s",
+        old_length, max_ctx, old_length > max_ctx,
+    )
     tool_specs = session.tool_router.get_tool_specs_for_llm()
     await session.context_manager.compact(
         model_name=session.config.model_name,
@@ -211,6 +216,11 @@ async def _compact_and_notify(session: Session) -> None:
     )
     new_length = session.context_manager.context_length
     if new_length != old_length:
+        logger.warning(
+            "Context compacted: %d -> %d tokens (max=%d, %d messages)",
+            old_length, new_length, max_ctx,
+            len(session.context_manager.items),
+        )
         await session.send_event(
             Event(
                 event_type="compacted",
@@ -582,6 +592,34 @@ class Handlers:
 
                 # If no tool calls, add assistant message and we're done
                 if not tool_calls:
+                    logger.warning(
+                        "Agent loop ending: no tool calls. "
+                        "finish_reason=%s, token_count=%d, "
+                        "context_length=%d, max_context=%d, "
+                        "iteration=%d/%d, "
+                        "response_text=%s",
+                        finish_reason,
+                        token_count,
+                        session.context_manager.context_length,
+                        session.context_manager.max_context,
+                        iteration,
+                        effective_max,
+                        (content or "")[:500],
+                    )
+                    await session.send_event(
+                        Event(
+                            event_type="tool_log",
+                            data={
+                                "tool": "system",
+                                "log": (
+                                    f"Loop exit: no tool calls. "
+                                    f"finish_reason={finish_reason}, "
+                                    f"tokens={token_count}/{session.context_manager.max_context}, "
+                                    f"iter={iteration}/{effective_max}"
+                                ),
+                            },
+                        )
+                    )
                     if content:
                         assistant_msg = Message(role="assistant", content=content)
                         session.context_manager.add_message(assistant_msg, token_count)
@@ -788,6 +826,14 @@ class Handlers:
 
             except ContextWindowExceededError:
                 # Force compact and retry this iteration
+                logger.warning(
+                    "ContextWindowExceededError at iteration %d — forcing compaction "
+                    "(context_length=%d, max_context=%d, messages=%d)",
+                    iteration,
+                    session.context_manager.context_length,
+                    session.context_manager.max_context,
+                    len(session.context_manager.items),
+                )
                 session.context_manager.context_length = (
                     session.context_manager.max_context + 1
                 )

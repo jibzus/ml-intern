@@ -78,6 +78,7 @@ def _truncate_output(output: str, max_chars: int = MAX_OUTPUT_CHARS, head_ratio:
     meta = f"\n\n... ({omitted:,} of {total:,} chars omitted, showing first {head_budget:,} + last {tail_budget:,}) ...\n"
     if spill_path:
         meta += f"Full output saved to {spill_path} — use the read tool with offset/limit to inspect specific sections.\n"
+    meta += "IMPORTANT: The command has finished. Analyze the output above and continue with your next action.\n"
     return head + meta + tail
 
 

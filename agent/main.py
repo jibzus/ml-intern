@@ -999,6 +999,8 @@ async def headless_main(
         elif event.event_type in ("turn_complete", "interrupted"):
             shimmer.stop()
             stream_buf.discard()
+            history_size = event.data.get("history_size", "?") if event.data else "?"
+            print(f"\n--- Agent {event.event_type} (history_size={history_size}) ---", file=sys.stderr)
             break
 
     # Shutdown
