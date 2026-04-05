@@ -236,8 +236,8 @@ function costLabel(hardware: string): string | null {
 // Visual helpers
 // ---------------------------------------------------------------------------
 
-function StatusIcon({ state, cancelled }: { state: ToolPartState; cancelled?: boolean }) {
-  if (cancelled) {
+function StatusIcon({ state, cancelled, isRejected }: { state: ToolPartState; cancelled?: boolean; isRejected?: boolean }) {
+  if (cancelled || isRejected) {
     return <BlockIcon sx={{ fontSize: 16, color: 'var(--muted-text)' }} />;
   }
   switch (state) {
@@ -501,7 +501,7 @@ function InlineApproval({
 // ---------------------------------------------------------------------------
 
 export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProps) {
-  const { setPanel, lockPanel, getJobUrl, getEditedScript, setJobStatus, getJobStatus, setToolError, getToolError } = useAgentStore();
+  const { setPanel, lockPanel, getJobUrl, getEditedScript, setJobStatus, getJobStatus, setToolError, getToolError, setToolRejected, getToolRejected } = useAgentStore();
   const researchSteps = useAgentStore(s => {
     const activeId = s.activeSessionId;
     return activeId ? (s.sessionStates[activeId]?.researchSteps) : undefined;
@@ -526,6 +526,9 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
 
   // Track which toolCallIds we've already submitted so we can detect new approval rounds
   const submittedIdsRef = useRef<Set<string>>(new Set());
+
+  // ── Panel lock state (for auto-follow vs user-selected) ───────────
+  const [lockedToolId, setLockedToolId] = useState<string | null>(null);
 
   // Reset submission state when new (unseen) pending tools arrive — e.g. second approval round
   useEffect(() => {
@@ -602,6 +605,10 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
         if (editedScript) {
           logger.log(`Sending edited script for ${toolCallId} (${editedScript.length} chars)`);
         }
+        // Mark tool as rejected if not approved
+        if (!d.approved) {
+          setToolRejected(toolCallId, true);
+        }
         return {
           tool_call_id: toolCallId,
           approved: d.approved,
@@ -621,7 +628,7 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
         setIsSubmitting(false);
       }
     },
-    [approveTools, lockPanel, getEditedScript],
+    [approveTools, lockPanel, getEditedScript, setToolRejected],
   );
 
   const handleApproveAll = useCallback(() => {
@@ -657,8 +664,8 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
     });
   }, []);
 
-  // ── Panel click handler ───────────────────────────────────────────
-  const handleClick = useCallback(
+  // ── Show tool panel (shared logic) ────────────────────────────────
+  const showToolPanel = useCallback(
     (tool: DynamicToolPart) => {
       const args = tool.input as Record<string, unknown> | undefined;
       const displayName = toolDisplayMap[tool.toolCallId] || tool.toolName;
@@ -684,7 +691,13 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
       const inputSection = args ? { content: JSON.stringify(args, null, 2), language: 'json' } : undefined;
 
       const outputText = tool.output ?? (tool.state === 'output-error' ? (tool as Record<string, unknown>).errorText : undefined);
-      if ((tool.state === 'output-available' || tool.state === 'output-error') && outputText) {
+
+      // Determine if tool is still running or has completed
+      const isRunning = tool.state === 'input-available' || tool.state === 'input-streaming' || tool.state === 'approval-responded';
+      const hasCompleted = tool.state === 'output-available' || tool.state === 'output-error' || tool.state === 'output-denied';
+
+      if (outputText) {
+        // Tool has output - show it (regardless of state)
         let language = 'text';
         const content = String(outputText);
         if (content.trim().startsWith('{') || content.trim().startsWith('[')) language = 'json';
@@ -694,6 +707,15 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
         setRightPanelOpen(true);
       } else if (tool.state === 'output-error') {
         const content = `Tool \`${tool.toolName}\` returned an error with no output message.`;
+        setPanel({ title: displayName, output: { content, language: 'markdown' }, input: inputSection }, 'output');
+        setRightPanelOpen(true);
+      } else if (hasCompleted && args) {
+        // Tool completed but has no output - show input as fallback
+        setPanel({ title: displayName, output: { content: JSON.stringify(args, null, 2), language: 'json' }, input: inputSection }, 'output');
+        setRightPanelOpen(true);
+      } else if (isRunning && args) {
+        // Tool is still running - show running message
+        const content = `Tool \`${tool.toolName}\` is still running...\n\nClick the input tab to view the tool arguments.`;
         setPanel({ title: displayName, output: { content, language: 'markdown' }, input: inputSection }, 'output');
         setRightPanelOpen(true);
       } else if (args) {
@@ -714,6 +736,51 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
     },
     [toolDisplayMap, setPanel, getEditedScript, setRightPanelOpen, setLeftSidebarOpen],
   );
+
+  // ── Panel click handler ───────────────────────────────────────────
+  const handleClick = useCallback(
+    (tool: DynamicToolPart) => {
+      // Toggle lock: if clicking the same tool that's already locked, unlock it
+      if (lockedToolId === tool.toolCallId) {
+        setLockedToolId(null);
+        return;
+      }
+
+      // Lock this tool
+      setLockedToolId(tool.toolCallId);
+
+      // Show the panel
+      showToolPanel(tool);
+    },
+    [lockedToolId, showToolPanel],
+  );
+
+  // ── Auto-follow currently active tool when not locked ─────────────
+  const activeToolIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lockedToolId !== null) return; // User has locked a tool, don't auto-follow
+
+    // Find the currently running tool (latest tool that's in progress)
+    const runningTool = tools.slice().reverse().find(t =>
+      t.state === 'input-available' ||
+      t.state === 'input-streaming' ||
+      t.state === 'approval-responded'
+    );
+
+    if (runningTool) {
+      // Track this as the active tool and show its panel
+      activeToolIdRef.current = runningTool.toolCallId;
+      showToolPanel(runningTool);
+    } else if (activeToolIdRef.current) {
+      // No running tool, but we were following one - check if it completed
+      const completedTool = tools.find(t => t.toolCallId === activeToolIdRef.current);
+      if (completedTool && (completedTool.state === 'output-available' || completedTool.state === 'output-error')) {
+        // The tool we were following has completed - update its panel
+        showToolPanel(completedTool);
+      }
+    }
+  }, [tools, lockedToolId, showToolPanel]);
 
   // ── Parse hf_jobs metadata from output ────────────────────────────
   function parseJobMeta(output: unknown): { jobUrl?: string; jobStatus?: string } {
@@ -808,7 +875,7 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
           const cancelled = isCancelledTool(tool);
           const currentlyHasError = state === 'output-error';
           const persistedError = getToolError(tool.toolCallId);
-          const hasError = persistedError || currentlyHasError;
+          const persistedRejection = getToolRejected(tool.toolCallId);
 
           // Stale in-progress tools after page reload: treat as completed
           const stale = !isProcessing && (state === 'input-available' || state === 'input-streaming');
@@ -816,7 +883,10 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
             : isPending && localDecision
               ? (localDecision.approved ? 'input-available' : 'output-denied')
               : state;
+          const isRejected = displayState === 'output-denied' || persistedRejection;
+          const hasError = (persistedError || currentlyHasError) && !isRejected;
           const label = cancelled ? 'cancelled'
+            : isRejected ? 'rejected'
             : hasError ? 'error'
             : statusLabel(displayState as ToolPartState);
 
@@ -853,11 +923,14 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
                   py: 1,
                   cursor: isPending ? 'default' : clickable ? 'pointer' : 'default',
                   transition: 'background-color 0.15s',
+                  bgcolor: lockedToolId === tool.toolCallId ? 'var(--hover-bg)' : 'transparent',
+                  borderLeft: lockedToolId === tool.toolCallId ? '3px solid var(--accent-yellow)' : '3px solid transparent',
                   '&:hover': clickable && !isPending ? { bgcolor: 'var(--hover-bg)' } : {},
                 }}
               >
                 <StatusIcon
                   cancelled={cancelled}
+                  isRejected={isRejected}
                   state={
                     hasError
                       ? 'output-error'
@@ -895,6 +968,7 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
                       : null;
                   const chipLabel = researchLabel || label;
                   if (!chipLabel || (tool.toolName === 'hf_jobs' && jobMeta.jobStatus)) return null;
+
                   return (
                     <Chip
                       label={chipLabel}
@@ -903,12 +977,11 @@ export default function ToolCallGroup({ tools, approveTools }: ToolCallGroupProp
                         height: 20,
                         fontSize: '0.65rem',
                         fontWeight: 600,
-                        bgcolor: cancelled ? 'rgba(255,255,255,0.05)'
+                        bgcolor: (cancelled || isRejected) ? 'rgba(255,255,255,0.05)'
                           : hasError ? 'rgba(224,90,79,0.12)'
-                          : displayState === 'output-denied' ? 'rgba(255,255,255,0.05)'
                           : (researchLabel && displayState === 'output-available') ? 'rgba(47,204,113,0.12)'
                           : 'var(--accent-yellow-weak)',
-                        color: cancelled ? 'var(--muted-text)'
+                        color: (cancelled || isRejected) ? 'var(--muted-text)'
                           : hasError ? 'var(--accent-red)'
                           : statusColor(displayState as ToolPartState),
                         letterSpacing: '0.03em',

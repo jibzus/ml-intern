@@ -111,6 +111,9 @@ interface AgentStore {
   // Tool error states (tool_call_id -> true if errored) - persisted across renders
   toolErrors: Record<string, boolean>;
 
+  // Tool rejected states (tool_call_id -> true if rejected by user) - persisted across renders
+  rejectedTools: Record<string, boolean>;
+
   // ── Per-session actions ─────────────────────────────────────────────
 
   /** Update a session's state. If it's the active session, also update flat state. */
@@ -154,6 +157,9 @@ interface AgentStore {
 
   setToolError: (toolCallId: string, hasError: boolean) => void;
   getToolError: (toolCallId: string) => boolean | undefined;
+
+  setToolRejected: (toolCallId: string, isRejected: boolean) => void;
+  getToolRejected: (toolCallId: string) => boolean | undefined;
 }
 
 /**
@@ -194,6 +200,25 @@ function saveToolErrors(errors: Record<string, boolean>): void {
   }
 }
 
+// Load persisted rejected tools from localStorage
+function loadRejectedTools(): Record<string, boolean> {
+  try {
+    const stored = localStorage.getItem('hf-agent-rejected-tools');
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+// Save rejected tools to localStorage
+function saveRejectedTools(rejected: Record<string, boolean>): void {
+  try {
+    localStorage.setItem('hf-agent-rejected-tools', JSON.stringify(rejected));
+  } catch (e) {
+    console.warn('Failed to persist rejected tools:', e);
+  }
+}
+
 export const useAgentStore = create<AgentStore>()((set, get) => ({
   sessionStates: {},
   activeSessionId: null,
@@ -215,6 +240,7 @@ export const useAgentStore = create<AgentStore>()((set, get) => ({
   jobUrls: {},
   jobStatuses: {},
   toolErrors: loadToolErrors(),
+  rejectedTools: loadRejectedTools(),
 
   // ── Per-session state management ──────────────────────────────────
 
@@ -409,4 +435,16 @@ export const useAgentStore = create<AgentStore>()((set, get) => ({
   },
 
   getToolError: (toolCallId) => get().toolErrors[toolCallId],
+
+  // ── Tool Rejections ──────────────────────────────────────────────────
+
+  setToolRejected: (toolCallId, isRejected) => {
+    set((state) => {
+      const updated = { ...state.rejectedTools, [toolCallId]: isRejected };
+      saveRejectedTools(updated);
+      return { rejectedTools: updated };
+    });
+  },
+
+  getToolRejected: (toolCallId) => get().rejectedTools[toolCallId],
 }));
